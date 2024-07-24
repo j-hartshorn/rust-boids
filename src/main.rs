@@ -1,4 +1,4 @@
-use bevy::{prelude::*, sprite::MaterialMesh2dBundle};
+use bevy::{diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin}, prelude::*, sprite::MaterialMesh2dBundle};
 use bevy_egui::{egui, EguiContexts, EguiPlugin};
 use rand::Rng;
 use rayon::prelude::*;
@@ -111,6 +111,8 @@ fn main() {
             ..default()
         }))
         .add_plugin(EguiPlugin)
+        .add_plugin(LogDiagnosticsPlugin::default())
+        .add_plugin(FrameTimeDiagnosticsPlugin::default())
         .insert_resource(SimulationParams::default())
         .insert_resource(PhysicsTime::default())
         .insert_resource(SpatialHashGrid::new(75.0, ZOOM_FACTOR)) // Increased cell size for larger window
