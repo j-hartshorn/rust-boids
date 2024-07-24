@@ -4,17 +4,14 @@ use std::collections::HashMap;
 
 const WINDOW_WIDTH: f32 = 800.0;
 const WINDOW_HEIGHT: f32 = 600.0;
-const BOID_MAX_SPEED: f32 = 100.0;
-const BOID_MAX_FORCE: f32 = 200.0;
+const FIXED_TIMESTEP: f32 = 1.0 / 60.0;
 const BOID_COUNT: usize = 100;
-const FIXED_TIMESTEP: f32 = 1.0 / 60.0; // 60 Hz fixed update rate
-const BOID_DECELERATION_FACTOR: f32 = 0.5;
+
 
 #[derive(Component)]
 struct Boid {
     velocity: Vec2,
 }
-
 
 #[derive(Resource)]
 struct SimulationParams {
@@ -25,6 +22,9 @@ struct SimulationParams {
     alignment_factor: f32,
     cohesion_factor: f32,
     linear_damping: f32,
+    max_speed: f32,
+    max_force: f32,
+    deceleration_factor: f32,
 }
 
 impl Default for SimulationParams {
@@ -37,6 +37,9 @@ impl Default for SimulationParams {
             alignment_factor: 0.5,
             cohesion_factor: 0.1,
             linear_damping: 0.1,
+            max_speed: 100.0,
+            max_force: 200.0,
+            deceleration_factor: 0.5,
         }
     }
 }
@@ -111,6 +114,7 @@ fn setup(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
+    params: Res<SimulationParams>,
 ) {
     commands.spawn(Camera2dBundle::default());
 
@@ -134,7 +138,7 @@ fn setup(
                 ..default()
             },
             Boid {
-                velocity: Vec2::new(rng.gen_range(-1.0..1.0), rng.gen_range(-1.0..1.0)).normalize() * BOID_MAX_SPEED * 0.5
+                velocity: Vec2::new(rng.gen_range(-1.0..1.0), rng.gen_range(-1.0..1.0)).normalize() * params.max_speed * 0.5
             },
         ));
     }
@@ -245,13 +249,13 @@ fn boid_movement(
             // Update boid
             if let Ok((_, mut transform, mut boid)) = boid_query.get_mut(*entity) {
                 // Apply acceleration
-                boid.velocity += acceleration * FIXED_TIMESTEP * BOID_MAX_FORCE;
+                boid.velocity += acceleration * FIXED_TIMESTEP * params.max_force;
 
                 // Apply deceleration based on current speed
                 let speed = boid.velocity.length();
                 if speed > 0.0 {
-                    let deceleration = (speed / BOID_MAX_SPEED).powi(2) * BOID_DECELERATION_FACTOR;
-                    let deceleration_force = -boid.velocity.normalize() * deceleration * BOID_MAX_FORCE;
+                    let deceleration = (speed / params.max_speed).powi(2) * params.deceleration_factor;
+                    let deceleration_force = -boid.velocity.normalize() * deceleration * params.max_force;
                     boid.velocity += deceleration_force * FIXED_TIMESTEP;
                 }
 
