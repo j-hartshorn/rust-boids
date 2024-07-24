@@ -8,6 +8,7 @@ const BOID_MAX_SPEED: f32 = 100.0;
 const BOID_MAX_FORCE: f32 = 200.0;
 const BOID_COUNT: usize = 100;
 const FIXED_TIMESTEP: f32 = 1.0 / 60.0; // 60 Hz fixed update rate
+const BOID_DECELERATION_FACTOR: f32 = 0.5;
 
 #[derive(Component)]
 struct Boid {
@@ -29,12 +30,12 @@ struct SimulationParams {
 impl Default for SimulationParams {
     fn default() -> Self {
         SimulationParams {
-            separation_radius: 20.0,
+            separation_radius: 30.0,
             alignment_radius: 50.0,
             cohesion_radius: 100.0,
             separation_factor: 1.0,
             alignment_factor: 0.5,
-            cohesion_factor: 0.3,
+            cohesion_factor: 0.1,
             linear_damping: 0.1,
         }
     }
@@ -246,9 +247,12 @@ fn boid_movement(
                 // Apply acceleration
                 boid.velocity += acceleration * FIXED_TIMESTEP * BOID_MAX_FORCE;
 
-                // Limit speed
-                if boid.velocity.length() > BOID_MAX_SPEED {
-                    boid.velocity = boid.velocity.normalize() * BOID_MAX_SPEED;
+                // Apply deceleration based on current speed
+                let speed = boid.velocity.length();
+                if speed > 0.0 {
+                    let deceleration = (speed / BOID_MAX_SPEED).powi(2) * BOID_DECELERATION_FACTOR;
+                    let deceleration_force = -boid.velocity.normalize() * deceleration * BOID_MAX_FORCE;
+                    boid.velocity += deceleration_force * FIXED_TIMESTEP;
                 }
 
                 // Apply linear damping
