@@ -5,6 +5,7 @@ const WINDOW_WIDTH: f32 = 800.0;
 const WINDOW_HEIGHT: f32 = 600.0;
 const BOID_SPEED: f32 = 100.0;
 const BOID_COUNT: usize = 100;
+const FIXED_TIMESTEP: f32 = 1.0 / 60.0; // 60 Hz fixed update rate
 
 #[derive(Component)]
 struct Boid;
@@ -32,12 +33,19 @@ impl Default for SimulationParams {
     }
 }
 
+#[derive(Resource, Default)]
+struct PhysicsTime {
+    accumulated_time: f32,
+}
+
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins)
         .insert_resource(SimulationParams::default())
+        .insert_resource(PhysicsTime::default())
         .add_startup_system(setup)
-        .add_system(boid_movement)
+        .add_system(update_physics_time)
+        .add_system(boid_movement.after(update_physics_time))
         .run();
 }
 
@@ -67,65 +75,73 @@ fn setup(mut commands: Commands) {
     }
 }
 
+fn update_physics_time(time: Res<Time>, mut physics_time: ResMut<PhysicsTime>) {
+    physics_time.accumulated_time += time.delta_seconds();
+}
+
 fn boid_movement(
-    time: Res<Time>,
+    mut physics_time: ResMut<PhysicsTime>,
     params: Res<SimulationParams>,
     mut boid_query: Query<(&mut Transform, Entity), With<Boid>>,
 ) {
-    let boids: Vec<(Entity, Vec3, Vec3)> = boid_query
-        .iter()
-        .map(|(transform, entity)| {
-            (entity, transform.translation, transform.up())
-        })
-        .collect();
+    while physics_time.accumulated_time >= FIXED_TIMESTEP {
+        physics_time.accumulated_time -= FIXED_TIMESTEP;
 
-    for (mut transform, entity) in boid_query.iter_mut() {
-        let mut separation = Vec3::ZERO;
-        let mut alignment = Vec3::ZERO;
-        let mut cohesion = Vec3::ZERO;
-        let mut total = 0;
+        let boids: Vec<(Entity, Vec3, Vec3)> = boid_query
+            .iter()
+            .map(|(transform, entity)| {
+                (entity, transform.translation, transform.up())
+            })
+            .collect();
 
-        for (other_entity, other_pos, other_dir) in &boids {
-            if *other_entity == entity {
-                continue;
+        for (mut transform, entity) in boid_query.iter_mut() {
+            let mut separation = Vec3::ZERO;
+            let mut alignment = Vec3::ZERO;
+            let mut cohesion = Vec3::ZERO;
+            let mut total = 0;
+
+            for (other_entity, other_pos, other_dir) in &boids {
+                if *other_entity == entity {
+                    continue;
+                }
+
+                let distance = transform.translation.distance(*other_pos);
+
+                if distance < params.separation_radius {
+                    separation += transform.translation - *other_pos;
+                }
+
+                if distance < params.alignment_radius {
+                    alignment += *other_dir;
+                    total += 1;
+                }
+
+                if distance < params.cohesion_radius {
+                    cohesion += *other_pos;
+                    total += 1;
+                }
             }
 
-            let distance = transform.translation.distance(*other_pos);
-
-            if distance < params.separation_radius {
-                separation += transform.translation - *other_pos;
+            if total > 0 {
+                alignment /= total as f32;
+                cohesion /= total as f32;
+                cohesion = (cohesion - transform.translation).normalize();
             }
 
-            if distance < params.alignment_radius {
-                alignment += *other_dir;
-                total += 1;
-            }
+            let mut velocity = transform.up();
+            velocity += separation.normalize_or_zero() * params.separation_factor;
+            velocity += alignment.normalize_or_zero() * params.alignment_factor;
+            velocity += cohesion.normalize_or_zero() * params.cohesion_factor;
 
-            if distance < params.cohesion_radius {
-                cohesion += *other_pos;
-                total += 1;
-            }
+            velocity = velocity.normalize();
+
+            transform.translation += velocity * BOID_SPEED * FIXED_TIMESTEP;
+            transform.rotation = Quat::from_rotation_arc(Vec3::Y, velocity);
+
+            // Wrap around screen edges
+            transform.translation.x = wrap(transform.translation.x, -WINDOW_WIDTH / 2.0, WINDOW_WIDTH / 2.0);
+            transform.translation.y = wrap(transform.translation.y, -WINDOW_HEIGHT / 2.0, WINDOW_HEIGHT / 2.0);
         }
-
-        if total > 0 {
-            alignment /= total as f32;
-            cohesion /= total as f32;
-            cohesion = (cohesion - transform.translation).normalize();
-        }
-
-        let mut velocity = transform.up();
-        velocity += separation.normalize_or_zero() * params.separation_factor;
-        velocity += alignment.normalize_or_zero() * params.alignment_factor;
-        velocity += cohesion.normalize_or_zero() * params.cohesion_factor;
-
-        velocity = velocity.normalize();
-
-        transform.translation += velocity * BOID_SPEED * time.delta_seconds();
-        transform.rotation = Quat::from_rotation_arc(Vec3::Y, velocity);
-
-        // Wrap around screen edges
-        transform.translation.x = wrap(transform.translation.x, -WINDOW_WIDTH / 2.0, WINDOW_WIDTH / 2.0);
-        transform.translation.y = wrap(transform.translation.y, -WINDOW_HEIGHT / 2.0, WINDOW_HEIGHT / 2.0);
     }
 }
 
