@@ -156,32 +156,31 @@ fn setup(
 
 fn create_arrow_mesh() -> Mesh {
     let mut mesh = Mesh::new(bevy::render::render_resource::PrimitiveTopology::TriangleList);
-    
+
     let vertices = vec![
-        [0.0, 0.5, 0.0],   // Top
+        [0.0, 0.5, 0.0],    // Top
         [-0.25, -0.5, 0.0], // Bottom left
         [0.25, -0.5, 0.0],  // Bottom right
         [-0.25, -0.3, 0.0], // Inner left
         [0.25, -0.3, 0.0],  // Inner right
     ];
-    
+
     let indices = vec![
-        0, 1, 2,  // Main triangle
-        1, 3, 4,  // Left wing
-        1, 4, 2,  // Right wing
+        0, 1, 2, // Main triangle
+        1, 3, 4, // Left wing
+        1, 4, 2, // Right wing
     ];
-    
+
     let normals = vec![[0.0, 0.0, 1.0]; 5];
     let uvs = vec![[0.0, 0.0]; 5];
-    
+
     mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, vertices);
     mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
     mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
     mesh.set_indices(Some(bevy::render::mesh::Indices::U32(indices)));
-    
+
     mesh
 }
-
 
 fn update_spatial_hash_grid(
     mut grid: ResMut<SpatialHashGrid>,
@@ -196,7 +195,6 @@ fn update_spatial_hash_grid(
 fn update_physics_time(time: Res<Time>, mut physics_time: ResMut<PhysicsTime>) {
     physics_time.accumulated_time += time.delta_seconds();
 }
-
 
 fn boid_movement(
     mut physics_time: ResMut<PhysicsTime>,
@@ -219,18 +217,22 @@ fn boid_movement(
             let mut cohesion = Vec2::ZERO;
             let mut total = 0;
 
-            let nearby_entities = grid.get_nearby_entities(transform.truncate(), params.cohesion_radius);
+            let nearby_entities =
+                grid.get_nearby_entities(transform.truncate(), params.cohesion_radius);
 
             for other_entity in nearby_entities {
                 if *entity == other_entity {
                     continue;
                 }
 
-                if let Some((_, other_pos, other_velocity)) = boid_data.iter().find(|&(e, _, _)| *e == other_entity) {
+                if let Some((_, other_pos, other_velocity)) =
+                    boid_data.iter().find(|&(e, _, _)| *e == other_entity)
+                {
                     let distance = calculate_wrapped_distance(*transform, *other_pos);
 
                     if distance < params.separation_radius && distance > 0.0 {
-                        separation += calculate_wrapped_direction(*transform, *other_pos) / distance;
+                        separation +=
+                            calculate_wrapped_direction(*transform, *other_pos) / distance;
                     }
 
                     if distance < params.alignment_radius {
@@ -264,8 +266,10 @@ fn boid_movement(
                 // Apply deceleration based on current speed
                 let speed = boid.velocity.length();
                 if speed > 0.0 {
-                    let deceleration = (speed / params.max_speed).powi(2) * params.deceleration_factor;
-                    let deceleration_force = -boid.velocity.normalize() * deceleration * params.max_force;
+                    let deceleration =
+                        (speed / params.max_speed).powi(2) * params.deceleration_factor;
+                    let deceleration_force =
+                        -boid.velocity.normalize() * deceleration * params.max_force;
                     boid.velocity += deceleration_force * FIXED_TIMESTEP;
                 }
 
@@ -282,14 +286,20 @@ fn boid_movement(
                 }
 
                 // Wrap around screen edges
-                transform.translation.x = wrap(transform.translation.x, -WINDOW_WIDTH / 2.0, WINDOW_WIDTH / 2.0);
-                transform.translation.y = wrap(transform.translation.y, -WINDOW_HEIGHT / 2.0, WINDOW_HEIGHT / 2.0);
+                transform.translation.x = wrap(
+                    transform.translation.x,
+                    -WINDOW_WIDTH / 2.0,
+                    WINDOW_WIDTH / 2.0,
+                );
+                transform.translation.y = wrap(
+                    transform.translation.y,
+                    -WINDOW_HEIGHT / 2.0,
+                    WINDOW_HEIGHT / 2.0,
+                );
             }
         }
     }
 }
-
-
 
 fn calculate_wrapped_distance(pos1: Vec3, pos2: Vec3) -> f32 {
     let dx = (pos1.x - pos2.x).abs();
@@ -301,30 +311,29 @@ fn calculate_wrapped_distance(pos1: Vec3, pos2: Vec3) -> f32 {
 
 fn calculate_wrapped_direction(pos1: Vec3, pos2: Vec3) -> Vec2 {
     let mut direction = pos1.truncate() - pos2.truncate();
-    
+
     if direction.x.abs() > WINDOW_WIDTH / 2.0 {
         direction.x = -direction.x.signum() * (WINDOW_WIDTH - direction.x.abs());
     }
     if direction.y.abs() > WINDOW_HEIGHT / 2.0 {
         direction.y = -direction.y.signum() * (WINDOW_HEIGHT - direction.y.abs());
     }
-    
+
     direction
 }
 
 fn calculate_wrapped_position(pos1: Vec3, pos2: Vec3) -> Vec3 {
     let mut wrapped_pos = pos2;
-    
+
     if (pos1.x - pos2.x).abs() > WINDOW_WIDTH / 2.0 {
         wrapped_pos.x += WINDOW_WIDTH * (pos1.x - pos2.x).signum();
     }
     if (pos1.y - pos2.y).abs() > WINDOW_HEIGHT / 2.0 {
         wrapped_pos.y += WINDOW_HEIGHT * (pos1.y - pos2.y).signum();
     }
-    
+
     wrapped_pos
 }
-
 
 fn wrap(value: f32, min: f32, max: f32) -> f32 {
     if value < min {
@@ -336,22 +345,28 @@ fn wrap(value: f32, min: f32, max: f32) -> f32 {
     }
 }
 
-fn ui_system(
-    mut egui_context: EguiContexts,
-    mut params: ResMut<SimulationParams>,
-) {
+fn ui_system(mut egui_context: EguiContexts, mut params: ResMut<SimulationParams>) {
     egui::SidePanel::left("parameters_panel").show(egui_context.ctx_mut(), |ui| {
         ui.heading("Simulation Parameters");
-        
-        ui.add(egui::Slider::new(&mut params.separation_radius, 0.0..=100.0).text("Separation Radius"));
-        ui.add(egui::Slider::new(&mut params.alignment_radius, 0.0..=100.0).text("Alignment Radius"));
+
+        ui.add(
+            egui::Slider::new(&mut params.separation_radius, 0.0..=100.0).text("Separation Radius"),
+        );
+        ui.add(
+            egui::Slider::new(&mut params.alignment_radius, 0.0..=100.0).text("Alignment Radius"),
+        );
         ui.add(egui::Slider::new(&mut params.cohesion_radius, 0.0..=200.0).text("Cohesion Radius"));
-        ui.add(egui::Slider::new(&mut params.separation_factor, 0.0..=2.0).text("Separation Factor"));
+        ui.add(
+            egui::Slider::new(&mut params.separation_factor, 0.0..=2.0).text("Separation Factor"),
+        );
         ui.add(egui::Slider::new(&mut params.alignment_factor, 0.0..=2.0).text("Alignment Factor"));
         ui.add(egui::Slider::new(&mut params.cohesion_factor, 0.0..=2.0).text("Cohesion Factor"));
         ui.add(egui::Slider::new(&mut params.linear_damping, 0.0..=1.0).text("Linear Damping"));
         ui.add(egui::Slider::new(&mut params.max_speed, 0.0..=200.0).text("Max Speed"));
         ui.add(egui::Slider::new(&mut params.max_force, 0.0..=400.0).text("Max Force"));
-        ui.add(egui::Slider::new(&mut params.deceleration_factor, 0.0..=1.0).text("Deceleration Factor"));
+        ui.add(
+            egui::Slider::new(&mut params.deceleration_factor, 0.0..=1.0)
+                .text("Deceleration Factor"),
+        );
     });
 }
