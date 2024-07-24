@@ -128,6 +128,9 @@ fn setup(
         let y = rng.gen_range(-WINDOW_HEIGHT / 2.0..WINDOW_HEIGHT / 2.0);
         let angle = rng.gen_range(0.0..std::f32::consts::TAU);
 
+        // Create a velocity vector from the angle
+        let velocity = Vec2::new(angle.cos(), angle.sin()) * params.max_speed * 0.5;
+
         commands.spawn((
             MaterialMesh2dBundle {
                 mesh: arrow_handle.clone().into(),
@@ -137,9 +140,7 @@ fn setup(
                     .with_scale(Vec3::splat(10.0)), // Adjust scale as needed
                 ..default()
             },
-            Boid {
-                velocity: Vec2::new(rng.gen_range(-1.0..1.0), rng.gen_range(-1.0..1.0)).normalize() * params.max_speed * 0.5
-            },
+            Boid { velocity },
         ));
     }
 }
