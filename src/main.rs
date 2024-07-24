@@ -7,7 +7,8 @@ use std::collections::HashMap;
 const WINDOW_WIDTH: f32 = 1920.0;
 const WINDOW_HEIGHT: f32 = 1080.0;
 const FIXED_TIMESTEP: f32 = 1.0 / 60.0;
-const BOID_COUNT: usize = 1000;
+const BOID_COUNT: usize = 10000;
+const ZOOM_FACTOR: f32 = 2.0;
 
 #[derive(Component)]
 struct Boid {
@@ -55,9 +56,9 @@ struct SpatialHashGrid {
 }
 
 impl SpatialHashGrid {
-    fn new(cell_size: f32) -> Self {
+    fn new(cell_size: f32, zoom_factor: f32) -> Self {
         SpatialHashGrid {
-            cell_size,
+            cell_size: cell_size * zoom_factor,
             grid: HashMap::new(),
         }
     }
@@ -112,7 +113,7 @@ fn main() {
         .add_plugin(EguiPlugin)
         .insert_resource(SimulationParams::default())
         .insert_resource(PhysicsTime::default())
-        .insert_resource(SpatialHashGrid::new(75.0)) // Increased cell size for larger window
+        .insert_resource(SpatialHashGrid::new(75.0, ZOOM_FACTOR)) // Increased cell size for larger window
         .add_startup_system(setup)
         .add_system(update_physics_time)
         .add_system(update_spatial_hash_grid)
@@ -127,7 +128,13 @@ fn setup(
     mut materials: ResMut<Assets<ColorMaterial>>,
     params: Res<SimulationParams>,
 ) {
-    commands.spawn(Camera2dBundle::default());
+    commands.spawn(Camera2dBundle {
+        projection: OrthographicProjection {
+            scale: ZOOM_FACTOR,
+            ..default()
+        },
+        ..default()
+    });
 
     let arrow_mesh = create_arrow_mesh();
     let arrow_handle = meshes.add(arrow_mesh);
@@ -225,10 +232,10 @@ fn boid_movement(
                     .fold(
                         (Vec2::ZERO, Vec2::ZERO, Vec2::ZERO, 0),
                         |(mut sep, mut ali, mut coh, mut tot), (_, other_pos, other_velocity)| {
-                            let distance = calculate_wrapped_distance(position, other_pos);
+                            let distance = calculate_wrapped_distance(position, other_pos, ZOOM_FACTOR);
 
                             if distance < params.separation_radius && distance > 0.0 {
-                                sep += calculate_wrapped_direction(position, other_pos) / distance;
+                                sep += calculate_wrapped_direction(position, other_pos, ZOOM_FACTOR) / distance;
                             }
 
                             if distance < params.alignment_radius {
@@ -237,7 +244,7 @@ fn boid_movement(
                             }
 
                             if distance < params.cohesion_radius {
-                                coh += calculate_wrapped_position(position, other_pos).truncate();
+                                coh += calculate_wrapped_position(position, other_pos, ZOOM_FACTOR).truncate();
                                 tot += 1;
                             }
 
@@ -271,9 +278,9 @@ fn boid_movement(
 
                 let mut new_position = position + new_velocity.extend(0.0) * FIXED_TIMESTEP;
 
-                // Wrap around screen edges
-                new_position.x = wrap(new_position.x, -WINDOW_WIDTH / 2.0, WINDOW_WIDTH / 2.0);
-                new_position.y = wrap(new_position.y, -WINDOW_HEIGHT / 2.0, WINDOW_HEIGHT / 2.0);
+                // Wrap around screen edges (adjusted for zoom)
+                new_position.x = wrap(new_position.x, -WINDOW_WIDTH / 2.0 * ZOOM_FACTOR, WINDOW_WIDTH / 2.0 * ZOOM_FACTOR);
+                new_position.y = wrap(new_position.y, -WINDOW_HEIGHT / 2.0 * ZOOM_FACTOR, WINDOW_HEIGHT / 2.0 * ZOOM_FACTOR);
 
                 (entity, new_position, new_velocity)
             })
@@ -295,35 +302,35 @@ fn boid_movement(
     }
 }
 
-fn calculate_wrapped_distance(pos1: Vec3, pos2: Vec3) -> f32 {
+fn calculate_wrapped_distance(pos1: Vec3, pos2: Vec3, zoom_factor: f32) -> f32 {
     let dx = (pos1.x - pos2.x).abs();
     let dy = (pos1.y - pos2.y).abs();
-    let wrapped_dx = dx.min(WINDOW_WIDTH - dx);
-    let wrapped_dy = dy.min(WINDOW_HEIGHT - dy);
+    let wrapped_dx = dx.min(WINDOW_WIDTH * zoom_factor - dx);
+    let wrapped_dy = dy.min(WINDOW_HEIGHT * zoom_factor - dy);
     (wrapped_dx * wrapped_dx + wrapped_dy * wrapped_dy).sqrt()
 }
 
-fn calculate_wrapped_direction(pos1: Vec3, pos2: Vec3) -> Vec2 {
+fn calculate_wrapped_direction(pos1: Vec3, pos2: Vec3, zoom_factor: f32) -> Vec2 {
     let mut direction = pos1.truncate() - pos2.truncate();
 
-    if direction.x.abs() > WINDOW_WIDTH / 2.0 {
-        direction.x = -direction.x.signum() * (WINDOW_WIDTH - direction.x.abs());
+    if direction.x.abs() > WINDOW_WIDTH * zoom_factor / 2.0 {
+        direction.x = -direction.x.signum() * (WINDOW_WIDTH * zoom_factor - direction.x.abs());
     }
-    if direction.y.abs() > WINDOW_HEIGHT / 2.0 {
-        direction.y = -direction.y.signum() * (WINDOW_HEIGHT - direction.y.abs());
+    if direction.y.abs() > WINDOW_HEIGHT * zoom_factor / 2.0 {
+        direction.y = -direction.y.signum() * (WINDOW_HEIGHT * zoom_factor - direction.y.abs());
     }
 
     direction
 }
 
-fn calculate_wrapped_position(pos1: Vec3, pos2: Vec3) -> Vec3 {
+fn calculate_wrapped_position(pos1: Vec3, pos2: Vec3, zoom_factor: f32) -> Vec3 {
     let mut wrapped_pos = pos2;
 
-    if (pos1.x - pos2.x).abs() > WINDOW_WIDTH / 2.0 {
-        wrapped_pos.x += WINDOW_WIDTH * (pos1.x - pos2.x).signum();
+    if (pos1.x - pos2.x).abs() > WINDOW_WIDTH * zoom_factor / 2.0 {
+        wrapped_pos.x += WINDOW_WIDTH * zoom_factor * (pos1.x - pos2.x).signum();
     }
-    if (pos1.y - pos2.y).abs() > WINDOW_HEIGHT / 2.0 {
-        wrapped_pos.y += WINDOW_HEIGHT * (pos1.y - pos2.y).signum();
+    if (pos1.y - pos2.y).abs() > WINDOW_HEIGHT * zoom_factor / 2.0 {
+        wrapped_pos.y += WINDOW_HEIGHT * zoom_factor * (pos1.y - pos2.y).signum();
     }
 
     wrapped_pos
