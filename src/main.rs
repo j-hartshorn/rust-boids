@@ -1,4 +1,5 @@
 use bevy::{prelude::*, sprite::MaterialMesh2dBundle};
+use bevy_egui::{egui, EguiContexts, EguiPlugin};
 use rand::Rng;
 use std::collections::HashMap;
 
@@ -97,16 +98,19 @@ impl SpatialHashGrid {
     }
 }
 
+
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins)
+        .add_plugin(EguiPlugin)
         .insert_resource(SimulationParams::default())
         .insert_resource(PhysicsTime::default())
-        .insert_resource(SpatialHashGrid::new(50.0)) // Adjust cell size as needed
+        .insert_resource(SpatialHashGrid::new(50.0))
         .add_startup_system(setup)
         .add_system(update_physics_time)
         .add_system(update_spatial_hash_grid)
         .add_system(boid_movement.after(update_spatial_hash_grid))
+        .add_system(ui_system)
         .run();
 }
 
@@ -325,4 +329,24 @@ fn wrap(value: f32, min: f32, max: f32) -> f32 {
     } else {
         value
     }
+}
+
+fn ui_system(
+    mut egui_context: EguiContexts,
+    mut params: ResMut<SimulationParams>,
+) {
+    egui::SidePanel::left("parameters_panel").show(egui_context.ctx_mut(), |ui| {
+        ui.heading("Simulation Parameters");
+        
+        ui.add(egui::Slider::new(&mut params.separation_radius, 0.0..=100.0).text("Separation Radius"));
+        ui.add(egui::Slider::new(&mut params.alignment_radius, 0.0..=100.0).text("Alignment Radius"));
+        ui.add(egui::Slider::new(&mut params.cohesion_radius, 0.0..=200.0).text("Cohesion Radius"));
+        ui.add(egui::Slider::new(&mut params.separation_factor, 0.0..=2.0).text("Separation Factor"));
+        ui.add(egui::Slider::new(&mut params.alignment_factor, 0.0..=2.0).text("Alignment Factor"));
+        ui.add(egui::Slider::new(&mut params.cohesion_factor, 0.0..=2.0).text("Cohesion Factor"));
+        ui.add(egui::Slider::new(&mut params.linear_damping, 0.0..=1.0).text("Linear Damping"));
+        ui.add(egui::Slider::new(&mut params.max_speed, 0.0..=200.0).text("Max Speed"));
+        ui.add(egui::Slider::new(&mut params.max_force, 0.0..=400.0).text("Max Force"));
+        ui.add(egui::Slider::new(&mut params.deceleration_factor, 0.0..=1.0).text("Deceleration Factor"));
+    });
 }
