@@ -3,11 +3,10 @@ use bevy_egui::{egui, EguiContexts, EguiPlugin};
 use rand::Rng;
 use std::collections::HashMap;
 
-const WINDOW_WIDTH: f32 = 800.0;
-const WINDOW_HEIGHT: f32 = 600.0;
+const WINDOW_WIDTH: f32 = 1920.0;
+const WINDOW_HEIGHT: f32 = 1080.0;
 const FIXED_TIMESTEP: f32 = 1.0 / 60.0;
-const BOID_COUNT: usize = 100;
-
+const BOID_COUNT: usize = 500;
 
 #[derive(Component)]
 struct Boid {
@@ -31,15 +30,15 @@ struct SimulationParams {
 impl Default for SimulationParams {
     fn default() -> Self {
         SimulationParams {
-            separation_radius: 30.0,
-            alignment_radius: 50.0,
-            cohesion_radius: 100.0,
+            separation_radius: 15.0,
+            alignment_radius: 55.0,
+            cohesion_radius: 90.0,
             separation_factor: 1.0,
             alignment_factor: 0.5,
             cohesion_factor: 0.1,
-            linear_damping: 0.1,
-            max_speed: 100.0,
-            max_force: 200.0,
+            linear_damping: 0.05,
+            max_speed: 150.0,
+            max_force: 300.0,
             deceleration_factor: 0.5,
         }
     }
@@ -98,14 +97,20 @@ impl SpatialHashGrid {
     }
 }
 
-
 fn main() {
     App::new()
-        .add_plugins(DefaultPlugins)
+        .add_plugins(DefaultPlugins.set(WindowPlugin {
+            primary_window: Some(Window {
+                resolution: (WINDOW_WIDTH, WINDOW_HEIGHT).into(),
+                title: "Boids Simulation".to_string(),
+                ..default()
+            }),
+            ..default()
+        }))
         .add_plugin(EguiPlugin)
         .insert_resource(SimulationParams::default())
         .insert_resource(PhysicsTime::default())
-        .insert_resource(SpatialHashGrid::new(50.0))
+        .insert_resource(SpatialHashGrid::new(75.0)) // Increased cell size for larger window
         .add_startup_system(setup)
         .add_system(update_physics_time)
         .add_system(update_spatial_hash_grid)
