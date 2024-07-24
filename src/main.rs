@@ -25,7 +25,6 @@ struct SimulationParams {
     linear_damping: f32,
     max_speed: f32,
     max_force: f32,
-    deceleration_factor: f32,
 }
 
 impl Default for SimulationParams {
@@ -40,7 +39,6 @@ impl Default for SimulationParams {
             linear_damping: 0.05,
             max_speed: 150.0,
             max_force: 300.0,
-            deceleration_factor: 0.5,
         }
     }
 }
@@ -218,7 +216,8 @@ fn boid_movement(
         let boid_updates: Vec<(Entity, Vec3, Vec2)> = boid_data
             .par_iter()
             .map(|&(entity, position, velocity)| {
-                let nearby_entities = grid.get_nearby_entities(position.truncate(), params.cohesion_radius);
+                let nearby_entities =
+                    grid.get_nearby_entities(position.truncate(), params.cohesion_radius);
 
                 let (separation, alignment, cohesion, total) = nearby_entities
                     .into_iter()
@@ -262,14 +261,13 @@ fn boid_movement(
 
                 let mut new_velocity = velocity + acceleration * FIXED_TIMESTEP * params.max_force;
 
-                // Apply deceleration and linear damping
-                let speed = new_velocity.length();
-                if speed > 0.0 {
-                    let deceleration = (speed / params.max_speed).powi(2) * params.deceleration_factor;
-                    let deceleration_force = -new_velocity.normalize() * deceleration * params.max_force;
-                    new_velocity += deceleration_force * FIXED_TIMESTEP;
-                }
+                // Apply linear damping
                 new_velocity *= 1.0 - params.linear_damping * FIXED_TIMESTEP;
+
+                // Limit to max speed
+                if new_velocity.length() > params.max_speed {
+                    new_velocity = new_velocity.normalize() * params.max_speed;
+                }
 
                 let mut new_position = position + new_velocity.extend(0.0) * FIXED_TIMESTEP;
 
@@ -360,9 +358,5 @@ fn ui_system(mut egui_context: EguiContexts, mut params: ResMut<SimulationParams
         ui.add(egui::Slider::new(&mut params.linear_damping, 0.0..=1.0).text("Linear Damping"));
         ui.add(egui::Slider::new(&mut params.max_speed, 0.0..=200.0).text("Max Speed"));
         ui.add(egui::Slider::new(&mut params.max_force, 0.0..=400.0).text("Max Force"));
-        ui.add(
-            egui::Slider::new(&mut params.deceleration_factor, 0.0..=1.0)
-                .text("Deceleration Factor"),
-        );
     });
 }
