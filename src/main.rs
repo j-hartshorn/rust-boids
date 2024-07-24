@@ -1,5 +1,6 @@
 use bevy::{prelude::*, sprite::MaterialMesh2dBundle};
 use rand::Rng;
+use std::collections::HashMap;
 
 const WINDOW_WIDTH: f32 = 800.0;
 const WINDOW_HEIGHT: f32 = 600.0;
@@ -44,17 +45,66 @@ struct PhysicsTime {
     accumulated_time: f32,
 }
 
+#[derive(Resource)]
+struct SpatialHashGrid {
+    cell_size: f32,
+    grid: HashMap<(i32, i32), Vec<Entity>>,
+}
+
+impl SpatialHashGrid {
+    fn new(cell_size: f32) -> Self {
+        SpatialHashGrid {
+            cell_size,
+            grid: HashMap::new(),
+        }
+    }
+
+    fn clear(&mut self) {
+        self.grid.clear();
+    }
+
+    fn insert(&mut self, entity: Entity, position: Vec2) {
+        let cell = self.get_cell(position);
+        self.grid.entry(cell).or_insert_with(Vec::new).push(entity);
+    }
+
+    fn get_cell(&self, position: Vec2) -> (i32, i32) {
+        (
+            (position.x / self.cell_size).floor() as i32,
+            (position.y / self.cell_size).floor() as i32,
+        )
+    }
+
+    fn get_nearby_entities(&self, position: Vec2, radius: f32) -> Vec<Entity> {
+        let mut nearby = Vec::new();
+        let cell_radius = (radius / self.cell_size).ceil() as i32;
+        let center_cell = self.get_cell(position);
+
+        for dx in -cell_radius..=cell_radius {
+            for dy in -cell_radius..=cell_radius {
+                let cell = (center_cell.0 + dx, center_cell.1 + dy);
+                if let Some(entities) = self.grid.get(&cell) {
+                    nearby.extend(entities);
+                }
+            }
+        }
+
+        nearby
+    }
+}
+
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins)
         .insert_resource(SimulationParams::default())
         .insert_resource(PhysicsTime::default())
+        .insert_resource(SpatialHashGrid::new(50.0)) // Adjust cell size as needed
         .add_startup_system(setup)
         .add_system(update_physics_time)
-        .add_system(boid_movement.after(update_physics_time))
+        .add_system(update_spatial_hash_grid)
+        .add_system(boid_movement.after(update_spatial_hash_grid))
         .run();
 }
-
 
 fn setup(
     mut commands: Commands,
@@ -117,51 +167,73 @@ fn create_arrow_mesh() -> Mesh {
     mesh
 }
 
+
+fn update_spatial_hash_grid(
+    mut grid: ResMut<SpatialHashGrid>,
+    query: Query<(Entity, &Transform), With<Boid>>,
+) {
+    grid.clear();
+    for (entity, transform) in query.iter() {
+        grid.insert(entity, transform.translation.truncate());
+    }
+}
+
 fn update_physics_time(time: Res<Time>, mut physics_time: ResMut<PhysicsTime>) {
     physics_time.accumulated_time += time.delta_seconds();
 }
 
+
 fn boid_movement(
     mut physics_time: ResMut<PhysicsTime>,
     params: Res<SimulationParams>,
-    mut boid_query: Query<(&mut Transform, &mut Boid)>,
+    grid: Res<SpatialHashGrid>,
+    mut boid_query: Query<(Entity, &mut Transform, &mut Boid)>,
 ) {
     while physics_time.accumulated_time >= FIXED_TIMESTEP {
         physics_time.accumulated_time -= FIXED_TIMESTEP;
 
-        let boids: Vec<(Vec3, Vec2)> = boid_query
+        // Collect all boid data
+        let boid_data: Vec<(Entity, Vec3, Vec2)> = boid_query
             .iter()
-            .map(|(transform, boid)| (transform.translation, boid.velocity))
+            .map(|(entity, transform, boid)| (entity, transform.translation, boid.velocity))
             .collect();
 
-        for (mut transform, mut boid) in boid_query.iter_mut() {
+        for (entity, transform, _) in &boid_data {
             let mut separation = Vec2::ZERO;
             let mut alignment = Vec2::ZERO;
             let mut cohesion = Vec2::ZERO;
             let mut total = 0;
 
-            for (other_pos, other_vel) in &boids {
-                let distance = transform.translation.distance(*other_pos);
+            let nearby_entities = grid.get_nearby_entities(transform.truncate(), params.cohesion_radius);
 
-                if distance < params.separation_radius && distance > 0.0 {
-                    separation += (transform.translation.truncate() - other_pos.truncate()) / distance;
+            for other_entity in nearby_entities {
+                if *entity == other_entity {
+                    continue;
                 }
 
-                if distance < params.alignment_radius {
-                    alignment += *other_vel;
-                    total += 1;
-                }
+                if let Some((_, other_pos, other_velocity)) = boid_data.iter().find(|&(e, _, _)| *e == other_entity) {
+                    let distance = calculate_wrapped_distance(*transform, *other_pos);
 
-                if distance < params.cohesion_radius {
-                    cohesion += other_pos.truncate();
-                    total += 1;
+                    if distance < params.separation_radius && distance > 0.0 {
+                        separation += calculate_wrapped_direction(*transform, *other_pos) / distance;
+                    }
+
+                    if distance < params.alignment_radius {
+                        alignment += *other_velocity;
+                        total += 1;
+                    }
+
+                    if distance < params.cohesion_radius {
+                        cohesion += calculate_wrapped_position(*transform, *other_pos).truncate();
+                        total += 1;
+                    }
                 }
             }
 
             if total > 0 {
                 alignment /= total as f32;
                 cohesion /= total as f32;
-                cohesion = (cohesion - transform.translation.truncate()).normalize();
+                cohesion = (cohesion - transform.truncate()).normalize();
             }
 
             let mut acceleration = Vec2::ZERO;
@@ -169,32 +241,72 @@ fn boid_movement(
             acceleration += alignment.normalize_or_zero() * params.alignment_factor;
             acceleration += cohesion.normalize_or_zero() * params.cohesion_factor;
 
-            // Apply acceleration
-            boid.velocity += acceleration * FIXED_TIMESTEP * BOID_MAX_FORCE;
+            // Update boid
+            if let Ok((_, mut transform, mut boid)) = boid_query.get_mut(*entity) {
+                // Apply acceleration
+                boid.velocity += acceleration * FIXED_TIMESTEP * BOID_MAX_FORCE;
 
-            // Limit speed
-            if boid.velocity.length() > BOID_MAX_SPEED {
-                boid.velocity = boid.velocity.normalize() * BOID_MAX_SPEED;
+                // Limit speed
+                if boid.velocity.length() > BOID_MAX_SPEED {
+                    boid.velocity = boid.velocity.normalize() * BOID_MAX_SPEED;
+                }
+
+                // Apply linear damping
+                boid.velocity *= 1.0 - params.linear_damping * FIXED_TIMESTEP;
+
+                // Update position
+                transform.translation += boid.velocity.extend(0.0) * FIXED_TIMESTEP;
+
+                // Update rotation to face the direction of movement
+                if boid.velocity != Vec2::ZERO {
+                    let angle = Vec2::Y.angle_between(boid.velocity);
+                    transform.rotation = Quat::from_rotation_z(angle);
+                }
+
+                // Wrap around screen edges
+                transform.translation.x = wrap(transform.translation.x, -WINDOW_WIDTH / 2.0, WINDOW_WIDTH / 2.0);
+                transform.translation.y = wrap(transform.translation.y, -WINDOW_HEIGHT / 2.0, WINDOW_HEIGHT / 2.0);
             }
-
-            // Apply linear damping
-            boid.velocity *= 1.0 - params.linear_damping * FIXED_TIMESTEP;
-
-            // Update position
-            transform.translation += boid.velocity.extend(0.0) * FIXED_TIMESTEP;
-
-            // Update rotation to face the direction of movement
-            if boid.velocity != Vec2::ZERO {
-                let angle = Vec2::Y.angle_between(boid.velocity);
-                transform.rotation = Quat::from_rotation_z(angle);
-            }
-
-            // Wrap around screen edges
-            transform.translation.x = wrap(transform.translation.x, -WINDOW_WIDTH / 2.0, WINDOW_WIDTH / 2.0);
-            transform.translation.y = wrap(transform.translation.y, -WINDOW_HEIGHT / 2.0, WINDOW_HEIGHT / 2.0);
         }
     }
 }
+
+
+
+fn calculate_wrapped_distance(pos1: Vec3, pos2: Vec3) -> f32 {
+    let dx = (pos1.x - pos2.x).abs();
+    let dy = (pos1.y - pos2.y).abs();
+    let wrapped_dx = dx.min(WINDOW_WIDTH - dx);
+    let wrapped_dy = dy.min(WINDOW_HEIGHT - dy);
+    (wrapped_dx * wrapped_dx + wrapped_dy * wrapped_dy).sqrt()
+}
+
+fn calculate_wrapped_direction(pos1: Vec3, pos2: Vec3) -> Vec2 {
+    let mut direction = pos1.truncate() - pos2.truncate();
+    
+    if direction.x.abs() > WINDOW_WIDTH / 2.0 {
+        direction.x = -direction.x.signum() * (WINDOW_WIDTH - direction.x.abs());
+    }
+    if direction.y.abs() > WINDOW_HEIGHT / 2.0 {
+        direction.y = -direction.y.signum() * (WINDOW_HEIGHT - direction.y.abs());
+    }
+    
+    direction
+}
+
+fn calculate_wrapped_position(pos1: Vec3, pos2: Vec3) -> Vec3 {
+    let mut wrapped_pos = pos2;
+    
+    if (pos1.x - pos2.x).abs() > WINDOW_WIDTH / 2.0 {
+        wrapped_pos.x += WINDOW_WIDTH * (pos1.x - pos2.x).signum();
+    }
+    if (pos1.y - pos2.y).abs() > WINDOW_HEIGHT / 2.0 {
+        wrapped_pos.y += WINDOW_HEIGHT * (pos1.y - pos2.y).signum();
+    }
+    
+    wrapped_pos
+}
+
 
 fn wrap(value: f32, min: f32, max: f32) -> f32 {
     if value < min {
