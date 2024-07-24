@@ -1,4 +1,4 @@
-use bevy::prelude::*;
+use bevy::{prelude::*, sprite::MaterialMesh2dBundle};
 use rand::Rng;
 
 const WINDOW_WIDTH: f32 = 800.0;
@@ -49,8 +49,15 @@ fn main() {
         .run();
 }
 
-fn setup(mut commands: Commands) {
+fn setup(
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<ColorMaterial>>,
+) {
     commands.spawn(Camera2dBundle::default());
+
+    let arrow_mesh = create_arrow_mesh();
+    let arrow_handle = meshes.add(arrow_mesh);
 
     let mut rng = rand::thread_rng();
 
@@ -60,19 +67,45 @@ fn setup(mut commands: Commands) {
         let angle = rng.gen_range(0.0..std::f32::consts::TAU);
 
         commands.spawn((
-            SpriteBundle {
-                sprite: Sprite {
-                    color: Color::WHITE,
-                    custom_size: Some(Vec2::new(10.0, 5.0)),
-                    ..default()
-                },
+            MaterialMesh2dBundle {
+                mesh: arrow_handle.clone().into(),
+                material: materials.add(ColorMaterial::from(Color::WHITE)),
                 transform: Transform::from_translation(Vec3::new(x, y, 0.0))
-                    .with_rotation(Quat::from_rotation_z(angle)),
+                    .with_rotation(Quat::from_rotation_z(angle))
+                    .with_scale(Vec3::splat(10.0)), // Adjust scale as needed
                 ..default()
             },
             Boid,
         ));
     }
+}
+
+fn create_arrow_mesh() -> Mesh {
+    let mut mesh = Mesh::new(bevy::render::render_resource::PrimitiveTopology::TriangleList);
+    
+    let vertices = vec![
+        [0.0, 0.5, 0.0],   // Top
+        [-0.25, -0.5, 0.0], // Bottom left
+        [0.25, -0.5, 0.0],  // Bottom right
+        [-0.25, -0.3, 0.0], // Inner left
+        [0.25, -0.3, 0.0],  // Inner right
+    ];
+    
+    let indices = vec![
+        0, 1, 2,  // Main triangle
+        1, 3, 4,  // Left wing
+        1, 4, 2,  // Right wing
+    ];
+    
+    let normals = vec![[0.0, 0.0, 1.0]; 5];
+    let uvs = vec![[0.0, 0.0]; 5];
+    
+    mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, vertices);
+    mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
+    mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
+    mesh.set_indices(Some(bevy::render::mesh::Indices::U32(indices)));
+    
+    mesh
 }
 
 fn update_physics_time(time: Res<Time>, mut physics_time: ResMut<PhysicsTime>) {
