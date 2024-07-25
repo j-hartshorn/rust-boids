@@ -7,8 +7,8 @@ use std::collections::HashMap;
 const WINDOW_WIDTH: f32 = 1920.0;
 const WINDOW_HEIGHT: f32 = 1080.0;
 const FIXED_TIMESTEP: f32 = 1.0 / 60.0;
-const BOID_COUNT: usize = 10000;
-const ZOOM_FACTOR: f32 = 2.0;
+const BOID_COUNT: usize = 1000;
+const ZOOM_FACTOR: f32 = 1.5;
 
 #[derive(Component)]
 struct Boid {
