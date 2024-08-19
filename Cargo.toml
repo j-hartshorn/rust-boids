@@ -10,3 +10,14 @@ bevy = "0.10.0"
 bevy_egui = "0.20"
 rand = "0.8.5"
 rayon = "1.7"
+
+[profile.release]
+opt-level = 3         # Optimize for speed, other options: 0, 1, 2, 3, "s"
+debug = false         # Disable debug information
+debug-assertions = false
+rpath = false         # Disable rpath
+lto = true            # Enable Link-Time Optimization
+codegen-units = 1     # Reduce codegen units for better optimization
+panic = "abort"       # Optimize panic handling
+incremental = false   # Disable incremental compilation
+overflow-checks = false # Disable overflow checks
